@@ -10,8 +10,8 @@ from .chunking import (
     write_chunks,
 )
 from .ordering import (
-    DifficultySignals,
     LEVELS,
+    DifficultySignals,
     difficulty_score,
     level_for_score,
     rank_documents,
@@ -24,9 +24,9 @@ from .output import (
 )
 
 __all__ = [
+    "LEVELS",
     "Chunk",
     "DifficultySignals",
-    "LEVELS",
     "TokenCounter",
     "assign_split",
     "assign_splits",

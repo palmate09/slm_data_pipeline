@@ -36,8 +36,8 @@ from dataclasses import dataclass, field
 from ..models import Document
 
 __all__ = [
-    "DifficultySignals",
     "LEVELS",
+    "DifficultySignals",
     "difficulty_score",
     "level_for_score",
     "rank_documents",
@@ -468,7 +468,7 @@ def _normalise(scores: list[float]) -> list[float]:
     last = len(ordered) - 1
 
     def quantile(p: float) -> float:
-        index = min(last, max(0, int(round(p * last))))
+        index = min(last, max(0, round(p * last)))
         return ordered[index]
 
     low, high = quantile(0.10), quantile(0.90)

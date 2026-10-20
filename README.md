@@ -136,9 +136,12 @@ Final document schema (one JSON object per line, no intermediate `blocks`):
   "language": "en",
   "license": "...",
   "quality_score": 0.97,
+  "difficulty": 0.14,
+  "curriculum_rank": 5,
+  "curriculum_level": "foundational",
   "kept": true,
   "stage": "deduped",
-  "metadata": {"quality_checks": {...}},
+  "metadata": {"quality_checks": {...}, "curriculum": {...}},
   "schema_version": "2.0"
 }
 ```
@@ -160,6 +163,9 @@ Chunk schema:
   "token_count": 985,
   "quality_score": 0.97,
   "split": "train",
+  "difficulty": 0.14,
+  "curriculum_rank": 5,
+  "curriculum_level": "foundational",
   "content_hash": "sha256...",
   "schema_version": "2.0"
 }
@@ -168,6 +174,26 @@ Chunk schema:
 Splits are assigned at document level and balanced by size, so every split
 lands close to its configured share while no document is ever shared between
 splits (no train/eval leakage). Chunks never cross documents.
+
+### Curriculum ordering (base knowledge -> advanced)
+
+Stage F scores the whole corpus - documents extracted in earlier runs and
+newly extracted ones together - and writes the output from the foundations to
+the advanced material.  The score combines the difficulty of the page topic
+(from its title), the technical vocabulary, mathematical notation, code
+samples, structure and lexical rarity; it is then rescaled across the corpus
+so the levels are meaningful.  Every document and chunk carries:
+
+| field | meaning |
+| --- | --- |
+| `difficulty` | corpus-relative 0-1 score |
+| `curriculum_rank` | 1-based position, easiest first |
+| `curriculum_level` | `foundational`, `intermediate`, `advanced`, `expert` |
+
+`metadata.curriculum` keeps the full signal breakdown for inspection.  The
+ordering is metadata plus file order: chunk ids and hashes are unchanged, so a
+trainer can still shuffle.  `audit` prints the curriculum and `validate`
+fails if the chunks of a split are not ordered from base to advanced.
 
 ## Inspect and validate
 
