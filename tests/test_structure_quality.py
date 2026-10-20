@@ -18,9 +18,11 @@ from slm_pipeline.stage_f import (
     TokenCounter,
     assign_splits,
     chunk_document,
+    chunk_documents,
     write_chunks,
     write_dataset,
 )
+from slm_pipeline.stage_f.ordering import rank_documents
 
 WIKI_HTML = """<html><head><title>Test article - Wikipedia</title></head><body>
 <div id="mw-content-text"><div class="mw-parser-output">
@@ -747,3 +749,77 @@ def test_split_assignment_balances_by_size_and_keeps_documents_whole():
 
     # Deterministic: the same corpus always produces the same assignment.
     assert assign_splits(docs, {"train": 0.9, "val": 0.05, "test": 0.05}) == mapping
+
+
+def test_curriculum_ordering_sorts_base_knowledge_before_advanced():
+    from slm_pipeline.stage_f.ordering import difficulty_score, rank_documents
+
+    basic = Document(
+        id="basic", title="What is Machine Learning?", url="https://a",
+        text=(
+            "Machine learning is a field of study in artificial intelligence. "
+            "It learns patterns from data. This introduction explains the "
+            "basic idea of classification and regression in simple terms."
+        ),
+    )
+    advanced = Document(
+        id="advanced", title="Distributed Transformer Training", url="https://b",
+        text=(
+            "This chapter explains mixture of experts routing, expert parallelism, "
+            "tensor parallelism, sequence parallelism, gradient checkpointing, "
+            "mixed precision bf16 training, flashattention kernels, paged "
+            "attention with a kv cache, all-reduce collective communication with "
+            "NCCL, and reinforcement learning from human feedback with direct "
+            "preference optimization and reward models."
+        ),
+    )
+    middle = Document(
+        id="middle", title="Backpropagation", url="https://c",
+        text=(
+            "Backpropagation applies the chain rule to compute gradients. "
+            "The algorithm uses gradient descent to update weights, with a "
+            "learning rate schedule and momentum."
+        ),
+    )
+    ordered = rank_documents([advanced, basic, middle])
+    assert [d.id for d in ordered] == ["basic", "middle", "advanced"]
+    assert [d.curriculum_rank for d in ordered] == [1, 2, 3]
+    assert ordered[0].curriculum_level == "foundational"
+    assert ordered[-1].curriculum_level in {"advanced", "expert"}
+    assert ordered[0].difficulty < ordered[-1].difficulty
+
+    # Deterministic: the same corpus always produces the same curriculum.
+    again = rank_documents([advanced, basic, middle])
+    assert [d.id for d in again] == [d.id for d in ordered]
+    assert [d.difficulty for d in again] == [d.difficulty for d in ordered]
+
+    # A newly extracted document is ranked against the existing ones, not
+    # appended at the end.
+    fresh = Document(
+        id="fresh", title="Transformer Attention", url="https://d",
+        text="Self-attention with multi-head attention and positional encoding.",
+    )
+    combined = rank_documents([advanced, basic, middle, fresh])
+    ranks = {d.id: d.curriculum_rank for d in combined}
+    assert ranks["basic"] == 1
+    assert ranks["advanced"] == 4
+    assert 1 < ranks["fresh"] < 4
+    assert 0.0 <= difficulty_score(fresh).score <= 1.0
+
+
+def test_chunks_carry_curriculum_metadata_in_order():
+    docs = [
+        Document(id="d1", title="What is Machine Learning?", url="https://a",
+                 text="Machine learning learns patterns from data. " * 60),
+        Document(id="d2", title="Distributed Training", url="https://b",
+                 text="Mixture of experts with tensor parallelism and flashattention. " * 60),
+    ]
+    ordered = rank_documents(docs)
+    chunks = chunk_documents(ordered, max_tokens=120, overlap_tokens=20, min_tokens=10,
+                             tokenizer="words", splits={"train": 1.0})
+    assert chunks
+    ranks = [c.curriculum_rank for c in chunks]
+    assert ranks == sorted(ranks)
+    assert all(c.difficulty is not None for c in chunks)
+    assert all(c.curriculum_level for c in chunks)
+    assert chunks[0].curriculum_rank == 1
