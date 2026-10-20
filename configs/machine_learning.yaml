@@ -1,0 +1,137 @@
+# Topic configuration — Machine Learning.
+# Swap this file (keywords + prototypes + thresholds + source adapter) to
+# retarget another subject. The extraction/cleaning code is source-agnostic.
+topic: machine_learning
+display_name: Machine Learning
+
+# ---- Ingestion -------------------------------------------------------------
+# urls | sitemap | local | jsonl
+source_type: urls
+input_urls_file: data/urls/ml_urls.txt
+# sitemap_url: https://example.com/sitemap.xml
+# local_input_dir: data/raw
+# jsonl_input_file: data/input.jsonl
+# follow_sitemaps: false
+# max_pages: 100
+
+# Set to false for educational/personal use; many sites (incl. Wikipedia)
+# block bots via robots.txt. Set to true for production crawling.
+respect_robots_txt: false
+request_delay_seconds: 1.0
+max_retries: 3
+request_timeout_seconds: 30
+download_dir: data/downloads
+
+# ---- Extraction (Stage A) --------------------------------------------------
+extractor: auto
+min_extraction_confidence: 0.25
+content_profile: prose          # prose | technical | code
+preserve_code: true
+preserve_tables: false
+preserve_math: false
+math_policy: text               # text | latex | drop
+table_policy: drop              # drop | markdown | csv
+code_policy: keep               # keep | drop
+caption_policy: drop            # drop | keep
+reference_policy: drop          # drop | meta
+heading_markup: true
+
+# ---- Domain gate (Stage B) -------------------------------------------------
+keywords:
+  - "machine learning"
+  - "deep learning"
+  - "neural network"
+  - "gradient descent"
+  - "backpropagation"
+  - "transformer"
+  - "attention mechanism"
+  - "convolutional"
+  - "overfitting"
+  - "loss function"
+  - "pytorch"
+  - "tensorflow"
+  - "scikit-learn"
+embedding_model: sentence-transformers/all-MiniLM-L6-v2
+prototype_set_path: configs/ml_prototypes.txt
+topic_similarity_threshold: 0.55
+keyword_min_hits: 2
+enable_embedding: true
+
+# ---- Cleaning (Stage C) ----------------------------------------------------
+fix_unicode: true
+unify_quotes: true
+redact_pii: true
+# Direct identifiers are safe to redact by default. PERSON/ADDRESS need a
+# working Presidio + spaCy model, so they are opt-in.
+pii_entities:
+  - EMAIL_ADDRESS
+  - PHONE_NUMBER
+  - US_SSN
+  - CREDIT_CARD
+  - IBAN_CODE
+pii_person: false
+use_presidio: false
+language: en
+min_language_confidence: 0.9
+remove_references: true
+remove_captions: true
+remove_math: true
+repair_spacing: true
+boilerplate_fingerprint: true
+boilerplate_min_docs: 3
+
+# ---- Quality filtering (Stage D) ------------------------------------------
+min_word_count: 50
+max_word_count: 100000
+min_quality_score: 0.55
+max_perplexity: 1000.0
+perplexity_model_path: null
+min_fluency: 0.0
+min_alpha_ratio: 0.6
+max_markup_ratio: 0.005
+max_reference_ratio: 0.01
+max_fragment_ratio: 0.15
+max_formula_ratio: 0.02
+max_code_ratio: 0.5
+max_duplicate_line_ratio: 0.05
+max_url_ratio: 0.02
+min_paragraphs: 2
+min_sentences: 5
+require_lead: true
+min_avg_paragraph_words: 25.0
+max_heading_ratio: 0.5
+ngram_filters:
+  - {n: 2, max_ratio: 0.20}
+  - {n: 3, max_ratio: 0.18}
+  - {n: 4, max_ratio: 0.16}
+
+# ---- Deduplication (Stage E) ----------------------------------------------
+exact_dedup: true
+fuzzy_dedup: true
+fuzzy_threshold: 0.85
+fuzzy_num_perm: 128
+paragraph_dedup: true
+paragraph_min_words: 12
+
+# ---- Chunking / output (Stage F) ------------------------------------------
+chunking: true
+chunk_max_tokens: 1024
+chunk_overlap_tokens: 64
+chunk_min_tokens: 100
+tokenizer: tiktoken:cl100k_base
+write_documents: true
+write_chunks: true
+splits:
+  # Whole documents stay in one split (no train/eval leakage).  The eval
+  # share is sized so each split holds a usable amount of text.
+  train: 0.90
+  val: 0.05
+  test: 0.05
+schema_version: "2.0"
+output_format: jsonl
+output_dir: data/curated/{topic}
+shard_size_records: 10000
+
+# ---- Compute ---------------------------------------------------------------
+use_gpu: false
+ray_address: null

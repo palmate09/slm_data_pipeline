@@ -1,0 +1,10 @@
+A neural network is a series of algorithms that endeavors to recognize underlying relationships in a set of data through a process that mimics the way the human brain operates.
+Gradient descent is a first-order iterative optimization algorithm for finding a local minimum of a differentiable function.
+Backpropagation is a method used to calculate the gradient of the loss function with respect to the weights of a neural network.
+The Transformer is a deep learning architecture that relies on the self-attention mechanism to model dependencies in sequences.
+Overfitting occurs when a model learns the training data too well, including noise, and fails to generalize to unseen data.
+PyTorch is an open source machine learning library based on the Torch library, used for applications such as computer vision and natural language processing.
+Scikit-learn is a free machine learning library for the Python programming language featuring classification, regression and clustering algorithms.
+A convolutional neural network (CNN) is a class of neural networks most commonly applied to analyzing visual imagery.
+Reinforcement learning is an area of machine learning concerned with how intelligent agents ought to take actions in an environment to maximize cumulative reward.
+The attention mechanism allows a model to focus on the most relevant parts of the input sequence when producing each output token.

@@ -1,0 +1,60 @@
+[project]
+name = "slm-data-pipeline"
+version = "0.2.0"
+description = "End-to-end topic-specific data curation pipeline for SLM training"
+requires-python = ">=3.9"
+dependencies = [
+    "PyYAML>=6.0",
+    "requests>=2.31",
+    "lxml>=5.0",
+    "trafilatura>=1.6",
+    "readability-lxml>=0.8",
+    "justext>=3.0",
+    "pymupdf>=1.24",
+    "pymupdf4llm>=0.0.17",
+    "pypdf>=4.0",
+    "ftfy>=6.1",
+    "datasketch>=2.0",
+    "tqdm>=4.6",
+    "numpy>=1.24",
+    "py3langid>=0.2",
+    "tiktoken>=0.7",
+    "phonenumbers>=8.13",
+]
+
+[project.optional-dependencies]
+embedding = [
+    "sentence-transformers>=2.5",
+    "torch",
+]
+pii = [
+    "presidio-analyzer>=2.2",
+    "presidio-anonymizer>=2.2",
+]
+pdf = [
+    "pdfplumber>=0.11",
+]
+parquet = [
+    "pyarrow>=14.0",
+]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8",
+]
+
+[project.scripts]
+slm-pipeline = "slm_pipeline.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["slm_pipeline*", "tests*"]
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
