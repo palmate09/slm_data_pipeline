@@ -238,6 +238,7 @@ use_presidio: false
 
 # quality gates
 require_lead: true
+allow_leading_heading: true   # tolerate a page title before the prose
 min_avg_paragraph_words: 25
 max_heading_ratio: 0.5
 min_alpha_ratio: 0.6
@@ -282,6 +283,21 @@ first run; later runs use the local Hugging Face cache.
   skipped rather than being silently approximated.
 - Intermediate stage snapshots are kept under `.pipeline_staging/<topic>/` for
   resume/debugging. Final document output omits the `blocks` field.
+- The downloader follows browser-level redirects (HTML `meta refresh`, JS
+  `location.replace`, frameset shells), so documentation sites that redirect
+  with a stub page are downloaded as the real article. Cached files that turn
+  out to be redirect stubs are re-fetched automatically.
+- JavaScript-only pages (SPA shells: Kaggle, OpenML, OSF, ...) render no
+  server-side text. With `browser_fallback: true` the pipeline re-renders
+  those pages with the headless system browser (chrome/chromium on PATH, no
+  new Python dependency), extracts from the DOM, and stores the rendered DOM
+  back into the download cache. Render attempts are memoized under
+  `.pipeline_staging/<topic>/browser_render_attempts.json` — every URL is
+  rendered at most once, and `render_max_pages` caps how many pages one run
+  may render so large URL batches cannot stall on browser launches.
+- The topic gate compares against the prototype set in
+  `configs/ml_prototypes.txt`; widen it when the corpus covers more than the
+  core topic so that legitimate sub-field pages are not dropped.
 
 ## License
 

@@ -623,6 +623,10 @@ def _readability_candidate(html: str, url: str, title: str) -> ExtractionCandida
         from readability import Document as ReadabilityDocument
     except Exception:  # noqa: BLE001
         return None
+    # Readability logs a full traceback for pages without any element, so
+    # skip the obviously empty ones before handing them over.
+    if not html or not re.search(r"[A-Za-z]{4}", html):
+        return None
     try:
         rdoc = ReadabilityDocument(html)
         summary = rdoc.summary(html_partial=True)
@@ -684,6 +688,11 @@ def extract_html(
     m = re.search(r'<html[^>]+lang=["\']([^"\']+)', html, re.IGNORECASE)
     if m:
         lang = m.group(1).split("-")[0].lower()
+        # zxx ("no linguistic content") / und (undetermined) / mul (mixed)
+        # mean "unknown", not "a foreign language"; a later detection should
+        # win over them instead of producing a language-mismatch drop.
+        if lang in {"zxx", "und", "mul"}:
+            lang = None
     license_value = infer_license(url, html)
 
     candidates: list[ExtractionCandidate] = []
@@ -706,10 +715,14 @@ def extract_html(
         current_best = max((c.score for c in candidates), default=0.0)
         if requested == "justext" or not candidates or current_best < 0.35:
             add(_justext_candidate(html, url, title))
-    if requested == "auto" and candidates:
-        best_words = max(c.words for c in candidates)
-        # If precision extraction found very little, try a recall-oriented pass.
-        if best_words < 150:
+    if requested == "auto":
+        best_words = max((c.words for c in candidates), default=0)
+        # If precision extraction found very little (or nothing), try a
+        # recall-oriented pass.  trafilatura's favor_precision mode returns
+        # no text at all on some outline/TOC-heavy pages (e.g. the
+        # scikit-learn user guide), so this pass must also run when the
+        # candidate list is empty.
+        if not candidates or best_words < 150:
             add(_trafilatura_candidate(html, url, title, favor_recall=True))
 
     if not candidates:

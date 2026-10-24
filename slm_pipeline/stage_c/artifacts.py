@@ -8,6 +8,21 @@ from __future__ import annotations
 
 import re
 
+# Real HTML element names.  A generic ``<something>`` pattern also matches
+# placeholders (``<your-username>``) and Python reprs (``<module 'torch'>``)
+# that show up in API documentation prose, so the tag list is explicit.
+_HTML_TAGS = (
+    "a|abbr|address|area|article|aside|audio|b|base|bdi|bdo|big|blockquote|"
+    "body|br|button|canvas|caption|center|cite|code|col|colgroup|data|datalist|"
+    "dd|del|details|dfn|dialog|div|dl|dt|em|embed|fieldset|figcaption|figure|"
+    "font|footer|form|h1|h2|h3|h4|h5|h6|head|header|hgroup|hr|html|i|iframe|"
+    "img|input|ins|kbd|label|legend|li|link|main|map|mark|menu|meta|meter|"
+    "nav|noscript|object|ol|optgroup|option|output|p|param|picture|pre|progress|"
+    "q|rp|rt|ruby|s|samp|script|section|select|slot|small|source|span|strong|"
+    "style|sub|summary|sup|table|tbody|td|template|textarea|tfoot|th|thead|"
+    "time|title|tr|track|u|ul|var|video|wbr"
+)
+
 ARTIFACT_PATTERNS = {
     "displaystyle": re.compile(r"\{\\displaystyle|\{\\textstyle"),
     "latex_command": re.compile(r"\\[a-zA-Z]+"),
@@ -22,9 +37,13 @@ ARTIFACT_PATTERNS = {
     ),
     "redacted": re.compile(r"\[REDACTED\]"),
     "html_entity": re.compile(r"&[a-zA-Z]+;|&#\d+;"),
-    "html_tag": re.compile(r"</?[a-zA-Z][^>]*>"),
-    "wiki_template": re.compile(r"\{\{|\}\}"),
-    "wiki_link": re.compile(r"\[\[|\]\]"),
+    "html_tag": re.compile(r"</?(?:" + _HTML_TAGS + r")\b[^>]*>", re.IGNORECASE),
+    "wiki_template": re.compile(r"\{\{[^{}\n]{1,300}\}"),
+    # A MediaWiki link is ``[[Target]]`` or ``[[Target|Label]]``.  Commas are
+    # excluded from the target so Python type hints such as
+    # ``Callable[[PreTrainedModel, torch.Tensor], torch.Tensor]`` (common in
+    # API documentation prose) are not reported as wiki links.
+    "wiki_link": re.compile(r"\[\[[^\[\]\n,]{1,120}(?:\|[^\[\]\n]{0,120})?\]\]"),
     "markdown_image": re.compile(r"!\[[^\]]*\]\([^)]*\)"),
     "url": re.compile(r"https?://\S+|www\.\S+", re.IGNORECASE),
     "isbn": re.compile(r"\bISBN[\s:]*[\dXx-]{10,17}\b"),

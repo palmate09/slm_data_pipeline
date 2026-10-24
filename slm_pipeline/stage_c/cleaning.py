@@ -100,6 +100,7 @@ _MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _MARKDOWN_LINK_RE = re.compile(r"\[([^\]]*)\]\([^)]*\)")
 _WIKI_LINK_RE = re.compile(r"\[\[([^\]|]*)(?:\|([^\]]*))?\]\]")
 _WIKI_TEMPLATE_RE = re.compile(r"\{\{[^{}]*\}\}")
+_HTML_COMMENT_RE = re.compile(r"<!--.*?-->", re.DOTALL)
 _HTML_TAG_RE = re.compile(
     r"</?[A-Za-z][A-Za-z0-9-]*"
     r"(?:\s+[A-Za-z-]+(?:=[^<>]*)?|\s+[\"'][^<>]*[\"'])*"
@@ -111,6 +112,25 @@ _REDACTION_MARKER_RE = re.compile(r"\[(?:REDACTED|EMAIL|URL|PHONE|SSN)\]")
 
 # A language switcher or a nav row: many short fragments separated by "|".
 _PIPE_NAV_RE = re.compile(r"^[^.|]{0,200}(?:\|[^.|]{1,40}){3,}\.?$")
+
+# A paragraph that opens with an ellipsis splice ("...where STDEV.P is the
+# Excel function..."): the source text marks content omitted before it (a
+# formula or figure extracted as its own block).  As a standalone training
+# sentence the splice marker is debris.
+_LEADING_SPLICE_RE = re.compile(r"^(?:\.\s*){2,}|^\u2026+\s*")
+
+
+def _lift_leading_splice(value: str) -> str:
+    """Drop a leading ellipsis splice and capitalize the continuation.
+
+    Only paragraphs that actually carried the marker are touched; ordinary
+    lowercase continuation paragraphs are handled by the dangling-prose
+    repair instead.
+    """
+    stripped = _LEADING_SPLICE_RE.sub("", value or "")
+    if stripped != value and stripped[:1].islower():
+        stripped = stripped[0].upper() + stripped[1:]
+    return stripped.strip()
 
 # A sentence may end with a closing quote or parenthesis ("... too.)"), so the
 # splitter also looks one character past the terminator.
@@ -142,10 +162,11 @@ def _drop_sentences_with(text: str, pattern: re.Pattern) -> str:
 def _strip_markup(text: str) -> str:
     """Remove HTML, wiki and markdown residue from a prose line.
 
-    Links keep their label, images and template braces are removed, and
-    raw HTML tags are dropped.  Fenced code never reaches this function.
+    Links keep their label, images, template braces, HTML comments and raw
+    HTML tags are dropped.  Fenced code never reaches this function.
     """
     value = text
+    value = _HTML_COMMENT_RE.sub(" ", value)
     value = _MARKDOWN_IMAGE_RE.sub(" ", value)
     value = _MARKDOWN_LINK_RE.sub(r"\1", value)
     value = _WIKI_LINK_RE.sub(lambda m: (m.group(2) or m.group(1) or ""), value)
@@ -158,6 +179,16 @@ def _strip_markup(text: str) -> str:
         value = value.replace(entity, char)
     value = _HTML_ENTITY_RE.sub(" ", value)
     return value
+
+
+def _strip_residual_html(text: str) -> str:
+    """Remove HTML residue that survived block-level cleaning.
+
+    This is intentionally limited to known HTML elements/comments; angle
+    brackets in code and mathematical inequalities must remain untouched.
+    """
+    value = _HTML_COMMENT_RE.sub(" ", text or "")
+    return _HTML_TAG_RE.sub(" ", value)
 
 # Sections that are often just directories of names/links.  Only a trailing
 # section made entirely of headings/lists is removed.
@@ -429,6 +460,12 @@ class CleaningChain:
                     fix_unicode_text=self.fix_unicode,
                 )
                 text = strip_inline_citations(text)
+                # Headings carry HTML residue too ("The 1 _/k_<sup>2</sup>
+                # Speed Limit" from PDF extraction).  Prose gets this pass in
+                # _clean_prose; headings need it here, followed by whitespace
+                # collapse because tags are replaced by spaces.
+                text = _strip_markup(text)
+                text = " ".join(text.split())
                 if not text or is_reference_heading(text) or self._is_droppable_line(text):
                     dropped += 1
                     continue
@@ -496,6 +533,7 @@ class CleaningChain:
             caption_policy=self.caption_policy,
             code_policy=self.code_policy,
         ).strip()
+        document.text = " ".join(_strip_residual_html(document.text).split())
 
         prose = "\n".join(
             b.text for b in cleaned if b.type in {"paragraph", "list", "heading", "quote"}
@@ -504,7 +542,9 @@ class CleaningChain:
         if detected:
             document.metadata["detected_language"] = detected
             document.metadata["language_confidence"] = confidence
-            if document.language is None:
+            if document.language is None or document.language in {"zxx", "und", "mul", ""}:
+                # Markup did not declare a usable language (e.g. sites that
+                # ship lang="zxx"); a confident detection wins outright.
                 document.language = detected
             elif document.language != detected and confidence >= self.min_language_confidence:
                 document.metadata["language_mismatch"] = True
@@ -914,7 +954,7 @@ class CleaningChain:
         value = _drop_sentences_with(value, _REDACTION_MARKER_RE)
         value = _drop_sentences_with(value, _URL_RE)
         value = _drop_sentences_with(value, _SPONSOR_SENTENCE_RE)
-        return value.strip()
+        return _lift_leading_splice(value)
 
     def _clean_list(self, text: str, pii_counts: dict[str, int] | None = None) -> str:
         items: list[str] = []
@@ -1011,7 +1051,21 @@ class CleaningChain:
             from .normalize import strip_math_wrappers
 
             text = strip_math_wrappers(text)
-        if re.search(r"\\(?:frac|sum|delta|nabla|alpha|beta|gamma|theta|lambda|sigma|cdot|times|le|ge|neq|approx|rightarrow|partial|infty)", text):
+        # Any LaTeX command that the math converter knows how to read.  The
+        # list is explicit so Windows paths ("C:\Users\...") in prose are not
+        # mangled into "CUsers...".
+        if re.search(
+            r"\\(?:frac|sum|prod|int|sqrt|delta|nabla|partial|infty|alpha|beta|"
+            r"gamma|theta|lambda|sigma|phi|varphi|psi|omega|varepsilon|epsilon|"
+            r"nu|mu|tau|rho|ell|hbar|imath|log|ln|exp|sin|cos|tan|max|min|sup|inf|"
+            r"det|dim|ker|argmax|argmin|cdot|times|div|pm|mp|le|leq|ge|geq|neq|ne|"
+            r"approx|equiv|sim|propto|rightarrow|leftarrow|leftrightarrow|"
+            r"Rightarrow|Leftarrow|Leftrightarrow|in|notin|subset|supset|cup|cap|"
+            r"forall|exists|neg|land|lor|dots|ldots|cdots|vdots|ddots|begin|end|"
+            r"hat|bar|tilde|vec|mathbb|mathcal|mathfrak|mathbf|mathit|mathrm|"
+            r"text|textbf|textit|textrm|mbox|mathsf|operatorname|operatorname)",
+            text,
+        ):
             text = math_to_text(text)
         # Math conversion can reintroduce spaces before punctuation/brackets.
         text = re.sub(r"\s+([,.;:!?])", r"\1", text)

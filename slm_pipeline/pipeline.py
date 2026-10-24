@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import urllib.parse
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -79,6 +80,44 @@ def _read_urls_file(path: str | Path) -> list[str]:
     ]
 
 
+def _prune_stale_downloads(download_dir: str | Path, urls: list[str]) -> int:
+    """Delete cached downloads that no longer match the current URL list.
+
+    Editing the URL file (dead-link repair, removal) otherwise leaves stale
+    files in the download cache: the iterator picks them up, producing
+    phantom documents.  A cached file is kept only when its sidecar metadata
+    records a URL from the current list (unpaired files are junk).
+    """
+    allowed = set(urls)
+    removed = 0
+    directory = Path(download_dir)
+    if not directory.exists():
+        return 0
+    for path in sorted(list(directory.iterdir())):
+        if not path.is_file():
+            continue
+        suffix = path.suffix.lower()
+        if suffix in (".html", ".pdf"):
+            meta_path = path.with_suffix(path.suffix + ".meta.json")
+            meta = {}
+            if meta_path.exists():
+                try:
+                    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    meta = {}
+            if meta.get("url") not in allowed:
+                path.unlink()
+                removed += 1
+                if meta_path.exists():
+                    meta_path.unlink()
+        elif path.name.endswith(".meta.json") and suffix == ".json":
+            # sidecar of an already-removed asset
+            asset = Path(str(path)[: -len(".meta.json")])
+            if not asset.exists():
+                path.unlink()
+    return removed
+
+
 def _read_sitemap(url: str, *, user_agent: str, timeout: int, max_pages: int | None = None) -> list[str]:
     """Fetch a sitemap (including one level of sitemapindex) and return URLs."""
     import requests
@@ -138,6 +177,103 @@ def _extract_from_jsonl(
                 fetched_at=item.get("fetched_at"),
             ))
     return results
+
+
+def _render_js_fallback(
+    results: list,
+    *,
+    config,
+    extractor: TopicDocumentExtractor,
+    staging_dir: Path,
+) -> tuple[list, int]:
+    """Re-render thin JavaScript SPA documents with the headless system browser.
+
+    Pages whose server response is an app shell (Kaggle, OSF, OpenML, ...)
+    extract to almost no text.  When a system browser is available, those URLs
+    are rendered once and the DOM replaces the cached download, so extraction
+    recovers the client-rendered content.  Attempt results are memoized in the
+    staging directory: any URL already tried is never re-rendered, because a
+    re-render would reproduce the same DOM.  ``render_max_pages`` caps how
+    many pages one Stage A run may render, so huge URL batches with many
+    JS shells cannot turn into hours of browser launches; unprocessed URLs
+    simply stay thin and get their chance in the next run.
+    """
+    from .stage_a.browser import find_chrome, render_page
+
+    chrome = find_chrome(config.chrome_binary)
+    if chrome is None:
+        print("  browser_fallback enabled but no chrome/chromium on PATH — skipped")
+        return results, 0
+
+    attempts_path = staging_dir / "browser_render_attempts.json"
+    attempts: dict[str, dict] = {}
+    if attempts_path.exists():
+        try:
+            attempts = json.loads(attempts_path.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            attempts = {}
+
+    out: list = []
+    recovered = 0
+    launched = 0
+    # Hosts where rendering repeatedly fails (JS hangs until the deadline) are
+    # skipped after 3 fruitless tries, so a hopeless SPA host cannot consume
+    # the render budget page by page.
+    host_book = attempts.get("__host_fails__", {})
+    for r in results:
+        words = len((r.document.text or "").split())
+        if words >= config.render_min_words:
+            out.append(r)
+            continue
+        url = r.document.url
+        if url in attempts:
+            # Already processed in an earlier run: the rendered DOM (if any)
+            # is in the download cache, so re-extraction sees the same text.
+            out.append(r)
+            continue
+        host = urllib.parse.urlparse(url).netloc.lower()
+        book = host_book.get(host) or {"tries": 0, "helped": 0}
+        if book["tries"] >= 3 and book["helped"] == 0:
+            out.append(r)
+            continue
+        if launched >= config.render_max_pages:
+            out.append(r)
+            continue
+        launched += 1
+        html = render_page(url, chrome_path=chrome,
+                           timeout_seconds=config.render_timeout_seconds)
+        if not html:
+            attempts[url] = {"helped": False, "words": words, "error": "render failed"}
+            book["tries"] += 1
+            host_book[host] = book
+            out.append(r)
+            continue
+        retry = extractor.extract_text(
+            text=html, url=url, doc_id=r.document.id,
+            fetched_at=r.document.fetched_at,
+        )
+        retry_words = len((retry.document.text or "").split())
+        if retry_words > words:
+            # Persist the rendered DOM in the download cache so later runs
+            # extract from the file instead of launching the browser again.
+            cache = TopicDocumentDownloader(download_dir=config.download_dir)._cache_path(url, False)
+            if cache.suffix == ".html":
+                cache.write_bytes(html.encode("utf-8"))
+            attempts[url] = {"helped": True, "words": retry_words}
+            book["tries"] += 1
+            book["helped"] += 1
+            host_book[host] = book
+            recovered += 1
+            out.append(retry)
+        else:
+            attempts[url] = {"helped": False, "words": words, "error": "no content in DOM"}
+            book["tries"] += 1
+            host_book[host] = book
+            out.append(r)
+
+    attempts["__host_fails__"] = host_book
+    attempts_path.write_text(json.dumps(attempts, indent=1, sort_keys=True))
+    return out, recovered
 
 
 def _stage_index(name: str) -> int:
@@ -244,6 +380,9 @@ def run_pipeline(
                 urls = _read_urls_file(config.input_urls_file)
                 if config.max_pages:
                     urls = urls[:config.max_pages]
+                pruned = _prune_stale_downloads(config.download_dir, urls)
+                if pruned:
+                    print(f"  pruned {pruned} stale cached downloads (no longer in URL list)")
 
             downloader = TopicDocumentDownloader(
                 download_dir=config.download_dir,
@@ -258,6 +397,18 @@ def run_pipeline(
             if config.max_pages:
                 records = records[:config.max_pages]
             extraction_results = extractor.extract_records(records)
+
+        # JavaScript-only pages render an app shell with no content text.
+        # With a system browser available, recover their DOM-rendered text.
+        if config.browser_fallback and source_type == "urls":
+            extraction_results, rendered = _render_js_fallback(
+                extraction_results,
+                config=config,
+                extractor=extractor,
+                staging_dir=staging_dir,
+            )
+            if rendered:
+                print(f"  browser fallback recovered {rendered} JS-only pages")
 
         docs: list[Document] = []
         for r in extraction_results:
@@ -422,6 +573,7 @@ def run_pipeline(
             language=config.language,
             min_language_confidence=config.min_language_confidence,
             require_lead=config.require_lead,
+            allow_leading_heading=config.allow_leading_heading,
             min_avg_paragraph_words=config.min_avg_paragraph_words,
             max_heading_ratio=config.max_heading_ratio,
             min_extraction_confidence=config.min_extraction_confidence,

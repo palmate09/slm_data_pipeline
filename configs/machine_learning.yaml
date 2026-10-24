@@ -17,9 +17,9 @@ input_urls_file: data/urls/ml_urls.txt
 # Set to false for educational/personal use; many sites (incl. Wikipedia)
 # block bots via robots.txt. Set to true for production crawling.
 respect_robots_txt: false
-request_delay_seconds: 1.0
+request_delay_seconds: 0.5
 max_retries: 3
-request_timeout_seconds: 30
+request_timeout_seconds: 20
 download_dir: data/downloads
 
 # ---- Extraction (Stage A) --------------------------------------------------
@@ -36,7 +36,20 @@ caption_policy: drop            # drop | keep
 reference_policy: drop          # drop | meta
 heading_markup: true
 
+# JS-only pages (SPA shells) contain no server-rendered text; re-render them
+# with the headless system browser and extract from the rendered DOM.  Needs
+# chrome/chromium on PATH (or set chrome_binary) — no new Python deps.
+browser_fallback: true
+# chrome_binary: /usr/bin/google-chrome
+render_timeout_seconds: 90.0
+render_min_words: 40
+# Cap on pages one Stage A run may browser-render (JS shells are rendered at
+# ~1 page per 30-90s; later resume runs work through the backlog).
+render_max_pages: 40
+
 # ---- Domain gate (Stage B) -------------------------------------------------
+# Keyword list is deliberately broad: the URL corpus covers classical ML,
+# deep learning, LLMs, RL, systems/MLOps and adjacent CS topics.
 keywords:
   - "machine learning"
   - "deep learning"
@@ -46,14 +59,75 @@ keywords:
   - "transformer"
   - "attention mechanism"
   - "convolutional"
+  - "convolution"
   - "overfitting"
   - "loss function"
   - "pytorch"
   - "tensorflow"
+  - "keras"
+  - "jax"
   - "scikit-learn"
+  - "reinforcement learning"
+  - "policy gradient"
+  - "q-learning"
+  - "reward function"
+  - "gymnasium"
+  - "mujoco"
+  - "language model"
+  - "llm"
+  - "gpt"
+  - "bert"
+  - "tokenization"
+  - "tokenizer"
+  - "embedding"
+  - "fine-tuning"
+  - "fine tuning"
+  - "inference"
+  - "quantization"
+  - "distillation"
+  - "few-shot"
+  - "prompt"
+  - "chain-of-thought"
+  - "architecture"
+  - "autoencoder"
+  - "diffusion model"
+  - "generative"
+  - "gan"
+  - "self-supervised"
+  - "contrastive"
+  - "benchmark"
+  - "dataset"
+  - "data pipeline"
+  - "mlops"
+  - "feature engineering"
+  - "cross validation"
+  - "hyperparameter"
+  - "ensemble"
+  - "gradient boosting"
+  - "xgboost"
+  - "random forest"
+  - "clustering"
+  - "regression"
+  - "classification"
+  - "probability"
+  - "statistics"
+  - "linear algebra"
+  - "computer vision"
+  - "natural language processing"
+  - "nlp"
+  - "anomaly detection"
+  - "time series"
+  - "recommendation"
+  - "gpu"
+  - "cuda"
+  - "distributed training"
+  - "model training"
+  - "training data"
+  - "label"
+  - "api"
 embedding_model: sentence-transformers/all-MiniLM-L6-v2
 prototype_set_path: configs/ml_prototypes.txt
-topic_similarity_threshold: 0.55
+topic_similarity_threshold: 0.40
 keyword_min_hits: 2
 enable_embedding: true
 
@@ -81,6 +155,10 @@ boilerplate_fingerprint: true
 boilerplate_min_docs: 3
 
 # ---- Quality filtering (Stage D) ------------------------------------------
+# Gains tuned for this corpus: docs/API-style pages (trained on official
+# documentation) have short paragraphs, slightly more markup and code than
+# editorial prose.  A handful of near-miss thresholds were relaxed after
+# inspecting previous-run drop reasons.
 min_word_count: 50
 max_word_count: 100000
 min_quality_score: 0.55
@@ -88,18 +166,22 @@ max_perplexity: 1000.0
 perplexity_model_path: null
 min_fluency: 0.0
 min_alpha_ratio: 0.6
-max_markup_ratio: 0.005
+max_markup_ratio: 0.01
 max_reference_ratio: 0.01
 max_fragment_ratio: 0.15
 max_formula_ratio: 0.02
-max_code_ratio: 0.5
+max_code_ratio: 0.7
 max_duplicate_line_ratio: 0.05
 max_url_ratio: 0.02
-min_paragraphs: 2
+min_paragraphs: 1
 min_sentences: 5
 require_lead: true
-min_avg_paragraph_words: 25.0
-max_heading_ratio: 0.5
+# Docs pages, papers and READMEs legitimately start with a title heading
+# ("Abstract", the repository name) before the prose; allow that single
+# leading heading instead of treating the page as lead-less.
+allow_leading_heading: true
+min_avg_paragraph_words: 14.0
+max_heading_ratio: 0.6
 ngram_filters:
   - {n: 2, max_ratio: 0.20}
   - {n: 3, max_ratio: 0.18}

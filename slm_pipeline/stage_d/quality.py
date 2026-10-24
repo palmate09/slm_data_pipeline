@@ -211,6 +211,7 @@ class QualityFilter:
         language: str | None = None,
         min_language_confidence: float = 0.9,
         require_lead: bool = False,
+        allow_leading_heading: bool = False,
         min_avg_paragraph_words: float = 0.0,
         max_heading_ratio: float = 1.0,
         min_extraction_confidence: float = 0.0,
@@ -240,6 +241,7 @@ class QualityFilter:
         self.language = language
         self.min_language_confidence = min_language_confidence
         self.require_lead = require_lead
+        self.allow_leading_heading = allow_leading_heading
         self.min_avg_paragraph_words = min_avg_paragraph_words
         self.max_heading_ratio = max_heading_ratio
         self.min_extraction_confidence = min_extraction_confidence
@@ -280,16 +282,42 @@ class QualityFilter:
             formula_chars = sum(len(b.text) for b in blocks if b.type == "formula")
             code_chars = sum(len(b.text) for b in blocks if b.type == "code")
             char_total = max(1, sum(len(b.text) for b in blocks))
-            # Lead: first meaningful block must be prose, not a heading/caption.
-            meaningful = [
-                b for b in blocks
-                if b.type not in {"caption", "navigation", "footnote", "formula"}
-            ]
-            first = meaningful[0] if meaningful else None
-            lead_present = bool(
-                first and first.type in {"paragraph", "quote"}
-                and len(first.text.split()) >= 8
-            )
+            # Lead: the first meaningful block must be prose, not a heading.
+            # With ``allow_leading_heading`` the scan skips a single page
+            # title / section heading (docs pages and papers commonly start
+            # with "Abstract" or the repository title) and looks at the first
+            # prose block that follows it.
+            if self.allow_leading_heading:
+                prose_blocks = [b for b in blocks if b.type in {"paragraph", "quote"}]
+                if prose_blocks:
+                    if len(prose_blocks[0].text.split()) >= 8:
+                        lead_present = True
+                    else:
+                        # A short opening line (README tagline, "WIP: ...") is
+                        # common on project pages; a real paragraph close
+                        # behind it still counts as a lead.
+                        lead_present = any(
+                            len(b.text.split()) >= 8 for b in prose_blocks[1:3]
+                        )
+                else:
+                    # No prose at all: a structured list (README feature
+                    # list) is acceptable content, a stray list item is not.
+                    list_block = next((b for b in blocks if b.type == "list"), None)
+                    lead_present = bool(
+                        list_block
+                        and len([i for i in list_block.text.splitlines() if i.strip()]) >= 3
+                        and len(list_block.text.split()) >= 15
+                    )
+            else:
+                meaningful = [
+                    b for b in blocks
+                    if b.type not in {"caption", "navigation", "footnote", "formula"}
+                ]
+                first = meaningful[0] if meaningful else None
+                lead_present = bool(
+                    first and first.type in {"paragraph", "quote"}
+                    and len(first.text.split()) >= 8
+                )
         else:
             paragraph_count = max(1, len(prose_lines))
             heading_count = 0

@@ -655,7 +655,93 @@ def test_cleaning_strips_markup_redaction_markers_and_sponsor_ctas():
     assert "Distributed training with ZeRO" in text
     # Code is preserved verbatim, including its URL.
     assert "git clone https://github.com/karpathy/nanoGPT.git" in text
+    assert scan_artifacts(text).get("url") == 1
+    assert set(scan_artifacts(text)) <= {"url"}
+
+
+def test_cleaning_strips_html_residue_from_headings_and_comments():
+    """PDF/HTML extraction can leave raw tags in headings and comments in prose."""
+    blocks = [
+        Block(type="heading", text="The 1 _/k_<sup>2</sup> Speed Limit", level=1),
+        Block(type="paragraph", text=(
+            "Nesterov (2004) gives a simple example of a smooth convex function "
+            "that converges at the rate achieved by the classical gradient method."
+        )),
+        Block(type="heading", text="By substituting _<u>θ</u> M_", level=2),
+        Block(type="paragraph", text=(
+            "<!-- Start of picture text --> The bound holds for every step of "
+            "the accelerated gradient method under strong convexity."
+        )),
+    ]
+    doc = Document(
+        id="sjw-nips10", text="",
+        url="http://pages.cs.wisc.edu/~swright/nips2010/sjw-nips10.pdf",
+        blocks=blocks,
+    )
+    cleaned = default_cleaning_chain(redact_pii=False)(doc)
+    text = cleaned.text
+    assert "<sup>" not in text and "</sup>" not in text
+    assert "<u>" not in text and "</u>" not in text
+    assert "<!--" not in text and "-->" not in text
+    assert "Speed Limit" in text
     assert scan_artifacts(text) == {}
+
+
+def test_cleaning_lifts_leading_ellipsis_splice():
+    """A paragraph that continues an omitted formula must not open with '...'."""
+    blocks = [
+        Block(type="paragraph", text=(
+            "The population mean is estimated from the sampled values above, "
+            "using the statistic whose formula has n rather than n-1 in the "
+            "denominator of the variance expression."
+        )),
+        Block(type="paragraph", text=(
+            "...where STDEV.P is the Excel function for the population "
+            "standard deviation. The sample analogue uses STDEV.S instead."
+        )),
+        Block(type="paragraph", text=(
+            ".5 remains a plain decimal start and keeps its leading dot."
+        )),
+    ]
+    doc = Document(
+        id="regintro", text="",
+        url="http://people.duke.edu/~rnau/regintro.htm", blocks=blocks,
+    )
+    cleaned = default_cleaning_chain(redact_pii=False)(doc)
+    text = cleaned.text
+    assert "Where STDEV.P is the Excel function" in text
+    assert "...where" not in text
+    # A single leading dot is a decimal number, not a splice marker.
+    assert ".5 remains" in text
+    assert _structure_issues(cleaned.text) == []
+
+
+def test_chunks_never_open_with_ellipsis_splice():
+    """Chunks are standalone units: none may open with a splice marker."""
+    blocks = [
+        Block(type="paragraph", text=(
+            "The loss is estimated from the average of the squared residuals "
+            "over the minibatch, and the estimate concentrates as the batch "
+            "grows. Practice keeps the batch at a size that balances variance "
+            "against the cost of a gradient evaluation on the full dataset."
+        )),
+        Block(type="paragraph", text=(
+            "... The gradient of the regularized objective is written as the "
+            "sum of a residual term and a smoothness term over the graph."
+        )),
+    ]
+    doc = Document(id="splice-1", text="", url="u", title="Splice", blocks=blocks)
+    chunks = chunk_documents(
+        [doc], max_tokens=60, overlap_tokens=0, min_tokens=5, tokenizer="words",
+    )
+    assert len(chunks) > 1
+    for chunk in chunks:
+        issues = _structure_issues(chunk.text)
+        assert not chunk.text.lstrip().startswith(("...", "…", ".."))
+        assert not any("closing punctuation" in issue for issue in issues), issues
+        assert not any("lowercase" in issue for issue in issues), issues
+    joined = "\n".join(chunk.text for chunk in chunks)
+    assert "The gradient of the regularized objective" in joined
 
 
 def test_cleaning_drops_sentences_with_redaction_markers():
@@ -823,3 +909,73 @@ def test_chunks_carry_curriculum_metadata_in_order():
     assert all(c.difficulty is not None for c in chunks)
     assert all(c.curriculum_level for c in chunks)
     assert chunks[0].curriculum_rank == 1
+
+
+def test_token_counter_handles_special_tokens_in_corpus_text():
+    """tiktoken raises on ``<|endoftext|>`` unless special tokens are allowed.
+
+    Real documents (tokenizer docs, LLM chat templates) contain such
+    strings; the chunking stage used to crash on them.
+    """
+    counter = TokenCounter("tiktoken:cl100k_base")
+    text = "A prompt ends with <|endoftext|> and another uses <|im_start|>."
+    assert counter.count(text) > 0
+    assert counter.tail(text, 3)
+    assert counter.trim_back(text, 4)
+    assert counter.split_parts(text, 3)
+
+
+def test_chunking_survives_documents_with_special_tokens():
+    doc = Document(
+        id="specials",
+        title="Tokenizer Special Tokens",
+        url="https://example.com/tokenizer",
+        text=(
+            "The end of text token <|endoftext|> marks the end of a sequence. "
+            "Chat templates use <|im_start|> and <|im_end|> around each turn. "
+            "This document explains how the tokenizer handles special tokens "
+            "when the text is encoded for training. " * 12
+        ),
+    )
+    chunks = chunk_documents([doc], max_tokens=60, overlap_tokens=10, min_tokens=5,
+                             tokenizer="tiktoken:cl100k_base",
+                             splits={"train": 1.0})
+    assert chunks
+    assert all(chunk.token_count <= 60 for chunk in chunks)
+
+
+def test_quality_accepts_a_lead_that_follows_a_page_heading():
+    """A page title before the prose must not count as a missing lead.
+
+    Opt-in via ``allow_leading_heading``; the strict default is unchanged.
+    """
+    blocks = [
+        Block(type="heading", text="Abstract", level=2),
+        Block(type="paragraph", text=(
+            "We present a deep learning method for language modelling that "
+            "reduces the training cost of large transformer models."
+        )),
+        Block(type="paragraph", text=(
+            "Experiments on standard benchmarks show consistent gains over "
+            "the baseline implementation across every evaluated task."
+        )),
+    ]
+    doc = Document(id="lead", title="Abstract", url="https://example.com/a",
+                   text=blocks_to_text(blocks))
+    doc.blocks = blocks
+    qf = QualityFilter(min_word_count=10, min_paragraphs=1, min_sentences=1,
+                       require_lead=True, allow_leading_heading=True,
+                       min_avg_paragraph_words=5.0,
+                       min_quality_score=0.0, max_markup_ratio=1.0)
+    result = qf(doc)
+    assert result.keep is True, result.reason
+    assert result.checks["lead_present"] is True
+
+    # The default (strict) behaviour is unchanged: heading first == no lead.
+    qf_strict = QualityFilter(min_word_count=10, min_paragraphs=1, min_sentences=1,
+                              require_lead=True,
+                              min_avg_paragraph_words=5.0,
+                              min_quality_score=0.0, max_markup_ratio=1.0)
+    strict = qf_strict(doc)
+    assert strict.keep is False
+    assert "lead" in strict.reason

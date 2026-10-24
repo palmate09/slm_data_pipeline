@@ -58,6 +58,17 @@ class PipelineConfig:
     keywords: list[str] = field(default_factory=list)
     enable_embedding: bool = True
 
+    # ---- browser rendering fallback (Stage A) ----
+    # JS-only pages (SPA app shells) yield no server-rendered text.  When
+    # enabled, the pipeline re-renders those pages with a headless system
+    # browser and extracts from the DOM.  Requires chrome/chromium on PATH
+    # (or chrome_binary set); failures fall back to the plain extraction.
+    browser_fallback: bool = False
+    chrome_binary: str | None = None
+    render_timeout_seconds: float = 45.0
+    render_min_words: int = 40
+    render_max_pages: int = 40
+
     # ---- cleaning (Stage C) ----
     fix_unicode: bool = True
     unify_quotes: bool = True
@@ -90,6 +101,7 @@ class PipelineConfig:
     perplexity_model_path: str | None = None
     min_fluency: float = 0.0
     require_lead: bool = False
+    allow_leading_heading: bool = False
     min_avg_paragraph_words: float = 0.0
     max_heading_ratio: float = 1.0
     min_alpha_ratio: float = 0.6

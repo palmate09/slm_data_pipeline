@@ -104,6 +104,10 @@ _STRUCTURAL_START_RE = re.compile(
     r"^(?:```|~~~|#{1,6}\s|[-*+]\s|\d+[.)]\s|>\s)"
 )
 _CLOSING_PUNCTUATION = ",;:.)]}"
+# A chunk may legitimately open with a complete parenthetical aside (many
+# READMEs and papers start a paragraph with "(you'll have to ...)."), which is
+# a full sentence and not a mid-sentence splice.
+_PARENTHETICAL_ASIDE_RE = re.compile(r"^\([^()]{1,200}\)[.,]?\s+(?=[A-Z\"'(])")
 
 
 def _chunks_by_split(chunks: list[dict]) -> dict[str, list[dict]]:
@@ -137,7 +141,7 @@ def _structure_issues(text: str) -> list[str]:
     first = lines[0].lstrip()
     if not _STRUCTURAL_START_RE.match(first):
         probe = first.lstrip("\"'([{")
-        if probe[:1].islower():
+        if probe[:1].islower() and not _PARENTHETICAL_ASIDE_RE.match(first):
             issues.append("starts with lowercase text")
         if first[:1] in _CLOSING_PUNCTUATION:
             issues.append(f"starts with closing punctuation {first[:1]!r}")

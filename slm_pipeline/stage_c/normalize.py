@@ -77,7 +77,9 @@ def _replace_wrapper(text: str, command: str) -> str:
 def _strip_latex_commands(text: str) -> str:
     # Simple textual commands first.
     for cmd in ("text", "mathrm", "mathbf", "mathit", "mathsf", "operatorname",
-                "textbf", "textit", "textrm", "mbox"):
+                "textbf", "textit", "textrm", "mbox", "mathcal", "mathbb",
+                "mathfrak", "boldsymbol", "mathnormal", "texttt", "textsc",
+                "textnormal", "textsf", "mathtt", "operatorname"):
         pattern = re.compile(r"\\" + cmd + r"\{([^{}]*)\}")
         for _ in range(20):
             new = pattern.sub(r"\1", text)

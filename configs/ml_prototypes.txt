@@ -8,3 +8,59 @@ Scikit-learn is a free machine learning library for the Python programming langu
 A convolutional neural network (CNN) is a class of neural networks most commonly applied to analyzing visual imagery.
 Reinforcement learning is an area of machine learning concerned with how intelligent agents ought to take actions in an environment to maximize cumulative reward.
 The attention mechanism allows a model to focus on the most relevant parts of the input sequence when producing each output token.
+A large language model is a deep learning model trained on a large corpus of text to predict the next token, and it is adapted to new tasks through instruction tuning and reinforcement learning from human feedback.
+Retrieval augmented generation combines a document retriever with a generative language model so that the answer is grounded in retrieved source passages.
+Fine-tuning a pretrained checkpoint on a task-specific dataset adapts the weights of the model and is used for classification, generation and instruction following.
+Model quantization reduces the precision of the weights, such as to 8-bit or 4-bit, so that inference needs less memory and runs faster on a GPU.
+Distributed training splits a large training job across multiple GPUs or machines using data parallelism, model parallelism or pipeline parallelism.
+Cross-entropy loss and the softmax function are used to train a classifier to predict the probability distribution over classes.
+Regularization techniques such as dropout, weight decay and early stopping reduce the variance of a model and prevent it from overfitting the training set.
+Batch normalization normalizes the activations of a network layer so that optimization converges faster and is less sensitive to initialization.
+A convolutional neural network is evaluated on an image classification benchmark such as ImageNet, where the model predicts a label for each photograph.
+Object detection models find the bounding boxes of instances of a class in an image, while segmentation models assign a class to every pixel.
+A word embedding maps tokens to dense vectors so that semantically similar words are close together in vector space.
+Tokenization splits raw text into subword units that a language model can consume, using algorithms such as byte pair encoding.
+Recurrent neural networks and long short-term memory networks model sequences by carrying a hidden state from one time step to the next.
+A convolutional or recurrent network is trained with backpropagation through time to minimize the negative log likelihood of the observed sequence.
+Reinforcement learning agents are trained with policy gradient methods such as proximal policy optimization, which update the policy from the rewards collected during rollouts.
+Simulated environments such as the OpenAI Gym interface let reinforcement learning agents learn control and game playing policies from trial and error.
+A machine learning pipeline consists of data ingestion, feature engineering, model training, evaluation and deployment, and it is versioned in production.
+A machine learning experiment tracks hyper-parameters, metrics and artifacts so that training runs are reproducible and comparable.
+Hyper-parameter optimization such as a random or grid search selects the best configuration of a model by validating it on held-out data.
+A confusion matrix and the F1 score summarize how well a classification model separates the classes of a labelled evaluation set.
+Cross-validation splits training data into several folds so that a model is evaluated on data it was not trained on, giving a less biased estimate of generalization.
+Principal component analysis reduces a high-dimensional dataset to a smaller number of uncorrelated components while preserving as much variance as possible.
+Clustering algorithms such as k-means group unlabelled data points by similarity, and the silhouette score measures how well the clusters are separated.
+A support vector machine finds the hyperplane that separates classes with the largest margin, and the kernel trick maps the data into a higher-dimensional space.
+A gradient boosted decision tree ensemble builds many shallow trees in sequence, each one correcting the errors of the previous trees.
+XGBoost and LightGBM are gradient boosting libraries that implement efficient distributed training for tabular data and win structured data competitions.
+A training set and a validation set are used to fit the parameters and the hyper-parameters of a model, while a held-out test set measures its final accuracy.
+Supervised learning fits a model to labeled examples, whereas unsupervised learning finds structure in unlabeled data, and semi-supervised learning uses a mixture of both.
+A data distribution shifts between the training set and the deployment environment, which causes a model accuracy to degrade over time.
+Feature scaling standardizes the range of input variables so that a gradient-based optimizer converges quickly and no feature dominates the loss.
+A loss function measures the difference between the model prediction and the target, and the optimizer minimizes that loss over the training examples.
+The learning rate controls how far the weights move in each optimization step, and it is one of the most important hyper-parameters in deep learning.
+A convolution layer slides a filter over the input to detect local patterns, and pooling layers reduce the spatial resolution of the feature maps.
+A recurrent sequence-to-sequence model encodes an input sentence into a context vector and decodes a response, and it is the basis of early neural machine translation systems.
+Natural language processing tasks include part-of-speech tagging, named entity recognition, sentiment analysis, question answering and text classification.
+A language model is evaluated with perplexity, the exponentiated average negative log likelihood of the held-out tokens, and with benchmark suites of downstream tasks.
+A paper on machine learning presents a new model, dataset or algorithm, an experimental setup with baselines and ablations, and quantitative results.
+A dataset split into training, validation and test partitions is used to train and evaluate a model, and the split must be fixed to avoid leakage.
+A pretrained model is trained on a large general corpus and then adapted to a downstream task, which is the standard recipe for modern NLP systems.
+A neural network is trained on a GPU with mixed precision arithmetic and gradient accumulation, which reduces memory usage and speeds up training.
+An autoencoder compresses its input into a lower-dimensional latent representation and reconstructs it, and it is used for representation learning and anomaly detection.
+A generative model samples new data that resembles the training data, and diffusion models generate images by iteratively denoising noise.
+A recurrent reinforcement learning agent interacts with a simulated environment, receives a reward signal, and learns a policy that maximizes expected cumulative return.
+Model selection compares candidate models on a validation set using a metric such as accuracy, F1, mean squared error or mean average precision.
+A machine learning library provides optimizers, layers, datasets and training loops that let a researcher implement and compare models quickly.
+A tutorial introduces the mathematics and the code of a machine learning method step by step, with worked examples and exercises for the reader.
+Time series forecasting predicts future values from historical observations, and seasonal components, trends and exogenous regressors are modelled explicitly.
+Anomaly detection system flags observations that deviate from the expected behaviour, often with an unsupervised model trained on normal data only.
+A recommendation system predicts the items a user will interact with from their past behaviour, using collaborative filtering or learned embeddings.
+The bias-variance tradeoff describes the tension between a model that underfits the training data and one that overfits it.
+Maximum likelihood estimation finds the parameters of a probabilistic model that make the observed data most probable under that model.
+The central limit theorem and the law of large numbers are the statistical results that underpin sampling, estimation and hypothesis testing in machine learning.
+A matrix factorization embeds users and items into a shared latent vector space, and a low rank approximation speeds up the computation.
+A convolutional network for image classification is trained with stochastic mini-batches and evaluated on a held-out split of the ImageNet dataset.
+A notebook shows the complete workflow of a machine learning project, from loading the data to training the model and plotting the results.
+An open source framework for deep learning provides distributed training, mixed precision, checkpointing and model parallel support for large models.

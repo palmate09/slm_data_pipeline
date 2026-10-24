@@ -39,18 +39,28 @@ class TokenCounter:
             except Exception:  # noqa: BLE001
                 self._encoding = None
 
+    def _encode(self, text: str) -> list[int]:
+        """Encode text, treating special tokens as ordinary text.
+
+        Corpus documents legitimately contain strings like ``<|endoftext|>``
+        (code samples, tokenizer docs).  tiktoken raises ``ValueError`` for
+        those unless ``disallowed_special`` is empty, which used to abort the
+        whole chunking stage.
+        """
+        return self._encoding.encode(text, disallowed_special=())
+
     def count(self, text: str) -> int:
         if not text:
             return 0
         if self._encoding is not None:
-            return len(self._encoding.encode(text))
+            return len(self._encode(text))
         return len(text.split())
 
     def tail(self, text: str, tokens: int) -> str:
         if tokens <= 0 or not text:
             return ""
         if self._encoding is not None:
-            ids = self._encoding.encode(text)
+            ids = self._encode(text)
             return self._encoding.decode(ids[-tokens:])
         words = text.split()
         return " ".join(words[-tokens:])
@@ -59,7 +69,7 @@ class TokenCounter:
         if self.count(text) <= max_tokens:
             return text
         if self._encoding is not None:
-            ids = self._encoding.encode(text)
+            ids = self._encode(text)
             return self._encoding.decode(ids[-max_tokens:])
         return " ".join(text.split()[-max_tokens:])
 
@@ -68,7 +78,7 @@ class TokenCounter:
         if self.count(text) <= max_tokens:
             return text
         if self._encoding is not None:
-            ids = self._encoding.encode(text)
+            ids = self._encode(text)
             return self._encoding.decode(ids[:max_tokens])
         return " ".join(text.split()[:max_tokens])
 
@@ -83,7 +93,7 @@ class TokenCounter:
         if max_tokens <= 0 or self.count(text) <= max_tokens:
             return [text]
         if self._encoding is not None:
-            ids = self._encoding.encode(text)
+            ids = self._encode(text)
             return [
                 self._encoding.decode(ids[i:i + max_tokens])
                 for i in range(0, len(ids), max_tokens)
@@ -249,6 +259,33 @@ def assign_splits(
 
 
 _SENTENCE_SPLIT_RE = re.compile(r"(?<=[.!?])\s+(?=[\"'(\[]?[A-Z0-9])")
+
+# A chunk that opens with dots/ellipsis is a continuation splice ("...where
+# the function is defined"), not a standalone training unit.
+_LEADING_SPLICE_RE = re.compile(r"^(?:\.\s*){2,}|^\u2026+\s*")
+
+
+def _clean_chunk_opening(text: str) -> str:
+    """Make chunk text open without a splice marker.
+
+    Sentence packing always starts a chunk at a sentence, but source
+    fragments (a paragraph continuing an omitted formula) and hard splits can
+    leave dots at the very start.  The marker is dropped and the continuation
+    is capitalized so the chunk reads as a clean opening.
+    """
+    value = _LEADING_SPLICE_RE.sub("", (text or "").lstrip())
+    if value != text.lstrip() and value[:1].islower():
+        value = value[0].upper() + value[1:]
+    return value.lstrip()
+
+
+def _clean_chunk_boundaries(text: str) -> str:
+    """Remove only obvious splice punctuation at a chunk boundary."""
+    value = _clean_chunk_opening(text)
+    # PDF/math extraction can leave a sentence-ending dot as the first token.
+    # Do not strip ordinary decimal points or punctuation inside the chunk.
+    value = re.sub(r"^\.\s+(?=[A-Za-z])", "", value)
+    return value.lstrip()
 
 
 def _render_blocks(blocks: list[Block], heading_markup: bool) -> str:
@@ -614,6 +651,7 @@ def chunk_document(
     )
     chunks: list[Chunk] = []
     for index, (text, path) in enumerate(parts):
+        text = _clean_chunk_boundaries(text)
         chunk_id = f"{document.id}-c{index:04d}"
         chunks.append(Chunk(
             id=chunk_id,
